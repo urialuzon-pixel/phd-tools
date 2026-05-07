@@ -15,36 +15,56 @@ def load_config():
         return yaml.safe_load(f)
 
 
+def get_s2_headers():
+    """Return Semantic Scholar API headers if key is available."""
+    api_key = os.environ.get('S2_API_KEY', '')
+    return {'x-api-key': api_key} if api_key else {}
+
+
+def s2_get(url, params, retries=3):
+    """GET request to Semantic Scholar with retry on rate limit."""
+    headers = get_s2_headers()
+    for attempt in range(retries):
+        try:
+            resp = requests.get(url, params=params, headers=headers, timeout=15)
+            if resp.status_code == 200:
+                return resp
+            elif resp.status_code == 429:
+                wait = 15 * (attempt + 1)
+                print(f"Rate limited — waiting {wait}s (attempt {attempt+1}/{retries})")
+                time.sleep(wait)
+            else:
+                print(f"HTTP {resp.status_code} from Semantic Scholar")
+                return None
+        except Exception as e:
+            print(f"Request error: {e}")
+            time.sleep(5)
+    return None
+
+
 def fetch_papers_by_keywords(config):
-    """Search Semantic Scholar by keyword, filter by target journals post-hoc."""
+    """Search Semantic Scholar by keyword."""
     papers = {}
     two_weeks_ago = (datetime.now() - timedelta(weeks=2)).strftime('%Y-%m-%d')
     today = datetime.now().strftime('%Y-%m-%d')
-    journal_names = [j['name'].lower() for j in config.get('journals', [])]
 
     for keyword in config.get('keywords', []):
-        url = "https://api.semanticscholar.org/graph/v1/paper/search"
         params = {
             'query': keyword,
             'fields': 'paperId,title,abstract,authors,year,publicationDate,venue,citationCount,url',
             'publicationDateOrYear': f'{two_weeks_ago}:{today}',
             'limit': 25,
         }
-        try:
-            resp = requests.get(url, params=params, timeout=15)
-            if resp.status_code == 200:
-                for paper in resp.json().get('data', []):
-                    if not paper.get('abstract'):
-                        continue
-                    pid = paper['paperId']
-                    if pid not in papers:
-                        papers[pid] = paper
-            elif resp.status_code == 429:
-                print(f"Rate limited on keyword '{keyword}' — waiting 10s")
-                time.sleep(10)
-        except Exception as e:
-            print(f"Error searching '{keyword}': {e}")
-        time.sleep(1.2)  # stay within rate limit
+        resp = s2_get("https://api.semanticscholar.org/graph/v1/paper/search", params)
+        if resp:
+            for paper in resp.json().get('data', []):
+                if not paper.get('abstract'):
+                    continue
+                pid = paper['paperId']
+                if pid not in papers:
+                    papers[pid] = paper
+            print(f"  '{keyword}' → {len(resp.json().get('data', []))} papers")
+        time.sleep(1.5)
 
     return papers
 
@@ -57,29 +77,28 @@ def fetch_papers_by_authors(config):
     for author_name in config.get('authors_to_track', []):
         try:
             # Step 1: resolve author ID
-            resp = requests.get(
+            resp = s2_get(
                 "https://api.semanticscholar.org/graph/v1/author/search",
-                params={'query': author_name, 'limit': 1},
-                timeout=10,
+                {'query': author_name, 'limit': 3},
             )
-            time.sleep(1.2)
-            if resp.status_code != 200 or not resp.json().get('data'):
+            time.sleep(1.5)
+            if not resp or not resp.json().get('data'):
                 print(f"Author not found: {author_name}")
                 continue
 
             author_id = resp.json()['data'][0]['authorId']
+            print(f"  Found author '{author_name}' — id {author_id}")
 
             # Step 2: get their papers
-            resp2 = requests.get(
+            resp2 = s2_get(
                 f"https://api.semanticscholar.org/graph/v1/author/{author_id}/papers",
-                params={
+                {
                     'fields': 'paperId,title,abstract,authors,year,publicationDate,venue,citationCount,url',
                     'limit': 20,
                 },
-                timeout=10,
             )
-            time.sleep(1.2)
-            if resp2.status_code != 200:
+            time.sleep(1.5)
+            if not resp2:
                 continue
 
             for paper in resp2.json().get('data', []):
