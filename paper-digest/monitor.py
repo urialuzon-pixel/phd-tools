@@ -36,12 +36,9 @@ def fetch_papers_by_keywords(config):
                 for paper in resp.json().get('data', []):
                     if not paper.get('abstract'):
                         continue
-                    venue = (paper.get('venue') or '').lower()
-                    # Include if from a target journal OR if no journal filter set
-                    if not journal_names or any(j in venue for j in journal_names):
-                        pid = paper['paperId']
-                        if pid not in papers:
-                            papers[pid] = paper
+                    pid = paper['paperId']
+                    if pid not in papers:
+                        papers[pid] = paper
             elif resp.status_code == 429:
                 print(f"Rate limited on keyword '{keyword}' — waiting 10s")
                 time.sleep(10)
