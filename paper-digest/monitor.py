@@ -96,8 +96,6 @@ def fetch_papers_by_keywords(config):
             'search': keyword,
             'filter': f'from_publication_date:{two_weeks_ago}',
             'per-page': 25,
-            'select': 'id,title,abstract_inverted_index,authorships,primary_location,'
-                      'publication_year,publication_date,cited_by_count,doi,landing_page_url',
         }
         resp = openalex_get('works', params)
         if resp:
@@ -140,8 +138,6 @@ def fetch_papers_by_authors(config):
             'filter': f'authorships.author.id:{author_id},'
                       f'from_publication_date:{two_weeks_ago}',
             'per-page': 10,
-            'select': 'id,title,abstract_inverted_index,authorships,primary_location,'
-                      'publication_year,publication_date,cited_by_count,doi,landing_page_url',
         })
         time.sleep(1.0)
         if not resp2:
