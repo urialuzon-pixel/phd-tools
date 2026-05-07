@@ -1,4 +1,5 @@
 import os
+import re
 import json
 import time
 import yaml
@@ -161,12 +162,34 @@ def get_journal_weight(paper, config):
     return 1.0
 
 
+def extract_json(text):
+    """Try direct parse, then regex-extract first {...} block."""
+    text = (text or '').strip()
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+    match = re.search(r'\{[^{}]*\}', text, re.DOTALL)
+    if match:
+        try:
+            return json.loads(match.group())
+        except json.JSONDecodeError:
+            pass
+    return None
+
+
 def score_and_summarize(papers_dict, config):
     """Use Claude Haiku to score and summarize each paper."""
     client = anthropic.Anthropic(api_key=os.environ['ANTHROPIC_API_KEY'])
     research_desc = config['research_profile']['description']
     min_score = config['delivery'].get('min_relevance_score', 6)
     results = []
+
+    system_prompt = (
+        "You are a research assistant. Respond with valid JSON only — "
+        "no preamble, no explanation, no markdown fences. "
+        'Output exactly: {"score": <int 1-10>, "summary": "<str>", "relevance_reason": "<str>"}'
+    )
 
     for paper in papers_dict.values():
         title = paper.get('title', 'N/A')
@@ -175,9 +198,7 @@ def score_and_summarize(papers_dict, config):
         if len(paper.get('authors', [])) > 4:
             authors_str += ' et al.'
 
-        prompt = f"""You are a research assistant helping a PhD researcher track literature.
-
-Research focus:
+        prompt = f"""Research focus:
 {research_desc}
 
 Paper:
@@ -187,23 +208,34 @@ Venue: {paper.get('venue', 'N/A')}
 Year: {paper.get('year', 'N/A')}
 Abstract: {abstract}
 
-Tasks:
-1. Score relevance 1-10 (10 = directly addresses the research focus)
-2. Write a 2-3 sentence plain-language summary of the paper's contribution
-3. One sentence explaining why it is or is not relevant to this research
+Score relevance 1-10, write a 2-3 sentence summary, and one sentence on relevance.
+Return JSON only: {{"score": <int>, "summary": "<str>", "relevance_reason": "<str>"}}"""
 
-Respond with valid JSON only:
-{{"score": <int>, "summary": "<str>", "relevance_reason": "<str>"}}"""
+        data = None
+        for attempt in range(3):
+            try:
+                response = client.messages.create(
+                    model="claude-haiku-4-5-20251001",
+                    max_tokens=400,
+                    system=system_prompt,
+                    messages=[{"role": "user", "content": prompt}],
+                )
+                raw_text = response.content[0].text if response.content else ''
+                data = extract_json(raw_text)
+                if data:
+                    break
+                print(f"  Attempt {attempt+1}: no JSON in response for '{title[:50]}'")
+            except Exception as e:
+                print(f"  Attempt {attempt+1} error for '{title[:50]}': {e}")
+            time.sleep(1.0)
+
+        if not data:
+            print(f"  Skipping '{title[:60]}' — could not parse score after 3 attempts")
+            time.sleep(0.5)
+            continue
 
         try:
-            response = client.messages.create(
-                model="claude-haiku-4-5-20251001",
-                max_tokens=350,
-                messages=[{"role": "user", "content": prompt}],
-            )
-            data = json.loads(response.content[0].text)
-            raw_score = data.get('score', 0)
-
+            raw_score = int(data.get('score', 0))
             weight = get_journal_weight(paper, config)
             boosted_score = min(10, round(raw_score * weight, 1))
 
@@ -212,9 +244,8 @@ Respond with valid JSON only:
                 paper['summary'] = data.get('summary', '')
                 paper['relevance_reason'] = data.get('relevance_reason', '')
                 results.append(paper)
-
         except Exception as e:
-            print(f"Error scoring '{title}': {e}")
+            print(f"  Score processing error for '{title[:50]}': {e}")
 
         time.sleep(0.5)
 
