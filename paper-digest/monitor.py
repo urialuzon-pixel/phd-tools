@@ -9,24 +9,24 @@ from datetime import datetime, timedelta
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
+OPENALEX_BASE = "https://api.openalex.org"
+MAILTO = "urialuzon@gmail.com"  # identifies us in OpenAlex polite pool
+
 
 def load_config():
     with open(os.path.join(os.path.dirname(__file__), 'config.yaml'), 'r') as f:
         return yaml.safe_load(f)
 
 
-def get_s2_headers():
-    """Return Semantic Scholar API headers if key is available."""
-    api_key = os.environ.get('S2_API_KEY', '')
-    return {'x-api-key': api_key} if api_key else {}
+# ── OpenAlex helpers ──────────────────────────────────────────
 
-
-def s2_get(url, params, retries=3):
-    """GET request to Semantic Scholar with retry on rate limit."""
-    headers = get_s2_headers()
+def openalex_get(path, params, retries=3):
+    """GET from OpenAlex with retry. Adds mailto for polite-pool access."""
+    params['mailto'] = MAILTO
+    url = f"{OPENALEX_BASE}/{path}"
     for attempt in range(retries):
         try:
-            resp = requests.get(url, params=params, headers=headers, timeout=15)
+            resp = requests.get(url, params=params, timeout=15)
             if resp.status_code == 200:
                 return resp
             elif resp.status_code == 429:
@@ -34,7 +34,7 @@ def s2_get(url, params, retries=3):
                 print(f"Rate limited — waiting {wait}s (attempt {attempt+1}/{retries})")
                 time.sleep(wait)
             else:
-                print(f"HTTP {resp.status_code} from Semantic Scholar")
+                print(f"OpenAlex HTTP {resp.status_code} for {path}")
                 return None
         except Exception as e:
             print(f"Request error: {e}")
@@ -42,81 +42,123 @@ def s2_get(url, params, retries=3):
     return None
 
 
+def reconstruct_abstract(inverted_index):
+    """OpenAlex stores abstracts as word→positions dict. Rebuild to string."""
+    if not inverted_index:
+        return ''
+    words = {}
+    for word, positions in inverted_index.items():
+        for pos in positions:
+            words[pos] = word
+    return ' '.join(words[i] for i in sorted(words.keys()))
+
+
+def normalize_paper(work, tracked_author=None):
+    """Convert OpenAlex work object to a standard internal dict."""
+    abstract = reconstruct_abstract(work.get('abstract_inverted_index') or {})
+    authors = [
+        {'name': a['author']['display_name']}
+        for a in work.get('authorships', [])
+        if a.get('author') and a['author'].get('display_name')
+    ]
+    venue = (
+        (work.get('primary_location') or {})
+        .get('source') or {}
+    ).get('display_name', '') or ''
+
+    url = work.get('doi') or work.get('landing_page_url') or work.get('id') or '#'
+
+    paper = {
+        'id': work.get('id', ''),
+        'title': work.get('title', 'N/A'),
+        'abstract': abstract,
+        'authors': authors,
+        'venue': venue,
+        'year': work.get('publication_year', ''),
+        'publication_date': work.get('publication_date', ''),
+        'citation_count': work.get('cited_by_count', 0),
+        'url': url,
+    }
+    if tracked_author:
+        paper['tracked_author'] = tracked_author
+    return paper
+
+
+# ── Fetching ─────────────────────────────────────────────────
+
 def fetch_papers_by_keywords(config):
-    """Search Semantic Scholar by keyword."""
+    """Search OpenAlex by keyword, filtered to last 2 weeks."""
     papers = {}
     two_weeks_ago = (datetime.now() - timedelta(weeks=2)).strftime('%Y-%m-%d')
-    today = datetime.now().strftime('%Y-%m-%d')
 
     for keyword in config.get('keywords', []):
         params = {
-            'query': keyword,
-            'fields': 'paperId,title,abstract,authors,year,publicationDate,venue,citationCount,url',
-            'publicationDateOrYear': f'{two_weeks_ago}:{today}',
-            'limit': 25,
+            'search': keyword,
+            'filter': f'from_publication_date:{two_weeks_ago},has_abstract:true',
+            'per-page': 25,
+            'select': 'id,title,abstract_inverted_index,authorships,primary_location,'
+                      'publication_year,publication_date,cited_by_count,doi,landing_page_url',
         }
-        resp = s2_get("https://api.semanticscholar.org/graph/v1/paper/search", params)
+        resp = openalex_get('works', params)
         if resp:
-            for paper in resp.json().get('data', []):
-                if not paper.get('abstract'):
-                    continue
-                pid = paper['paperId']
-                if pid not in papers:
-                    papers[pid] = paper
-            print(f"  '{keyword}' → {len(resp.json().get('data', []))} papers")
-        time.sleep(1.5)
+            results = resp.json().get('results', [])
+            count = 0
+            for work in results:
+                paper = normalize_paper(work)
+                if paper['abstract'] and paper['id'] not in papers:
+                    papers[paper['id']] = paper
+                    count += 1
+            print(f"  '{keyword}' → {count} papers")
+        time.sleep(1.0)
 
     return papers
 
 
 def fetch_papers_by_authors(config):
-    """Fetch recent papers by tracked authors regardless of journal."""
+    """Fetch recent papers by tracked authors."""
     papers = {}
     two_weeks_ago = (datetime.now() - timedelta(weeks=2)).strftime('%Y-%m-%d')
 
     for author_name in config.get('authors_to_track', []):
-        try:
-            # Step 1: resolve author ID
-            resp = s2_get(
-                "https://api.semanticscholar.org/graph/v1/author/search",
-                {'query': author_name, 'limit': 3},
-            )
-            time.sleep(1.5)
-            if not resp or not resp.json().get('data'):
-                print(f"Author not found: {author_name}")
-                continue
+        # Step 1: resolve author ID
+        resp = openalex_get('authors', {'search': author_name, 'per-page': 1})
+        time.sleep(1.0)
+        if not resp:
+            print(f"  Author lookup failed: {author_name}")
+            continue
 
-            author_id = resp.json()['data'][0]['authorId']
-            print(f"  Found author '{author_name}' — id {author_id}")
+        results = resp.json().get('results', [])
+        if not results:
+            print(f"  Author not found: {author_name}")
+            continue
 
-            # Step 2: get their papers
-            resp2 = s2_get(
-                f"https://api.semanticscholar.org/graph/v1/author/{author_id}/papers",
-                {
-                    'fields': 'paperId,title,abstract,authors,year,publicationDate,venue,citationCount,url',
-                    'limit': 20,
-                },
-            )
-            time.sleep(1.5)
-            if not resp2:
-                continue
+        author_id = results[0]['id'].split('/')[-1]  # extract e.g. A123456
+        print(f"  Found '{author_name}' → {author_id}")
 
-            for paper in resp2.json().get('data', []):
-                pub_date = paper.get('publicationDate') or ''
-                if pub_date >= two_weeks_ago and paper.get('abstract'):
-                    pid = paper['paperId']
-                    if pid not in papers:
-                        paper['tracked_author'] = author_name
-                        papers[pid] = paper
+        # Step 2: get their recent papers
+        resp2 = openalex_get('works', {
+            'filter': f'authorships.author.id:{author_id},'
+                      f'from_publication_date:{two_weeks_ago},has_abstract:true',
+            'per-page': 10,
+            'select': 'id,title,abstract_inverted_index,authorships,primary_location,'
+                      'publication_year,publication_date,cited_by_count,doi,landing_page_url',
+        })
+        time.sleep(1.0)
+        if not resp2:
+            continue
 
-        except Exception as e:
-            print(f"Error fetching papers for author '{author_name}': {e}")
+        for work in resp2.json().get('results', []):
+            paper = normalize_paper(work, tracked_author=author_name)
+            if paper['abstract'] and paper['id'] not in papers:
+                papers[paper['id']] = paper
 
     return papers
 
 
+# ── Scoring ───────────────────────────────────────────────────
+
 def get_journal_weight(paper, config):
-    venue = (paper.get('venue') or '').lower()
+    venue = paper.get('venue', '').lower()
     for j in config.get('journals', []):
         if j['name'].lower() in venue:
             return j.get('weight', 1.0)
@@ -133,7 +175,7 @@ def score_and_summarize(papers_dict, config):
     for paper in papers_dict.values():
         title = paper.get('title', 'N/A')
         abstract = paper.get('abstract', '')
-        authors_str = ', '.join(a.get('name', '') for a in paper.get('authors', [])[:4])
+        authors_str = ', '.join(a['name'] for a in paper.get('authors', [])[:4])
         if len(paper.get('authors', [])) > 4:
             authors_str += ' et al.'
 
@@ -166,13 +208,11 @@ Respond with valid JSON only:
             data = json.loads(response.content[0].text)
             raw_score = data.get('score', 0)
 
-            # Apply journal weight boost
             weight = get_journal_weight(paper, config)
             boosted_score = min(10, round(raw_score * weight, 1))
 
             if boosted_score >= min_score:
                 paper['score'] = boosted_score
-                paper['raw_score'] = raw_score
                 paper['summary'] = data.get('summary', '')
                 paper['relevance_reason'] = data.get('relevance_reason', '')
                 results.append(paper)
@@ -186,6 +226,8 @@ Respond with valid JSON only:
     return results
 
 
+# ── Email ─────────────────────────────────────────────────────
+
 def build_html(papers, config):
     today = datetime.now().strftime('%B %d, %Y')
     two_weeks_ago = (datetime.now() - timedelta(weeks=2)).strftime('%B %d, %Y')
@@ -194,11 +236,14 @@ def build_html(papers, config):
     medium = [p for p in papers if 6 <= p.get('score', 0) < 8]
 
     def card(paper):
-        authors = ', '.join(a.get('name', '') for a in paper.get('authors', [])[:3])
+        authors = ', '.join(a['name'] for a in paper.get('authors', [])[:3])
         if len(paper.get('authors', [])) > 3:
             authors += ' et al.'
         url = paper.get('url') or '#'
-        tracked = f' <span style="color:#2c5f8a; font-size:11px;">★ Tracked author: {paper["tracked_author"]}</span>' if paper.get('tracked_author') else ''
+        tracked = (
+            f' <span style="color:#2c5f8a;font-size:11px;">★ {paper["tracked_author"]}</span>'
+            if paper.get('tracked_author') else ''
+        )
         return f"""
         <div style="margin-bottom:18px;padding:14px 16px;border-left:3px solid #2c5f8a;background:#f8f9fa;border-radius:2px;">
           <h3 style="margin:0 0 4px 0;font-size:15px;">
@@ -232,7 +277,7 @@ def build_html(papers, config):
       {sections}
       <hr style="border:none;border-top:1px solid #eee;margin-top:32px;">
       <p style="color:#bbb;font-size:11px;">
-        Semantic Scholar + Claude Haiku &nbsp;|&nbsp; Edit <code>config.yaml</code> to adjust journals, keywords, or authors.
+        OpenAlex + Claude Haiku &nbsp;|&nbsp; Edit <code>config.yaml</code> to adjust journals, keywords, or authors.
       </p>
     </body></html>"""
 
@@ -256,14 +301,16 @@ def send_email(html, config):
     print(f"Digest sent to {recipient}")
 
 
+# ── Main ──────────────────────────────────────────────────────
+
 def main():
     config = load_config()
 
-    print("Fetching papers by keyword...")
+    print("Fetching papers by keyword (OpenAlex)...")
     keyword_papers = fetch_papers_by_keywords(config)
     print(f"  {len(keyword_papers)} unique papers from keyword searches")
 
-    print("Fetching papers by tracked authors...")
+    print("Fetching papers by tracked authors (OpenAlex)...")
     author_papers = fetch_papers_by_authors(config)
     print(f"  {len(author_papers)} papers from tracked authors")
 
