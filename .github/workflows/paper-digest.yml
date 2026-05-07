@@ -1,0 +1,30 @@
+name: Biweekly Research Digest
+
+on:
+  schedule:
+    # Runs on the 1st and 15th of every month at 08:00 UTC (10:00 Israel time)
+    - cron: '0 8 1,15 * *'
+  workflow_dispatch:  # allows manual trigger from GitHub UI
+
+jobs:
+  send-digest:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r paper-digest/requirements.txt
+
+      - name: Run digest
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+        run: python paper-digest/monitor.py

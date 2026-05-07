@@ -1,0 +1,75 @@
+# ============================================================
+# Research Digest — Configuration
+# Edit this file to add/remove journals, keywords, or authors.
+# No code changes needed.
+# ============================================================
+
+research_profile:
+  description: >
+    Hybrid physics-ML framework for detecting illegal mining and extractive activity
+    in disputed territories. Topics: geopolitical impunity, sovereignty disputes,
+    sediment transport modeling (SWAT), satellite remote sensing (Sentinel-2, NDTI),
+    physics-informed machine learning, residual anomaly detection, causal inference
+    (event study, difference-in-differences), game theory of resource extraction,
+    weak governance and deforestation, conflict and environment.
+
+# ── Journals ─────────────────────────────────────────────────
+# To add a journal: copy any block and change the name.
+# To remove a journal: delete the block.
+# weight: how much to boost relevance score for papers from this venue (1.0 = neutral)
+
+journals:
+  - name: "Remote Sensing of Environment"
+    weight: 1.5
+  - name: "Global Environmental Change"
+    weight: 1.4
+  - name: "Political Geography"
+    weight: 1.3
+  - name: "Journal of Conflict Resolution"
+    weight: 1.3
+  - name: "Water Resources Research"
+    weight: 1.2
+  - name: "Nature Geoscience"
+    weight: 1.5
+  - name: "Environmental Research Letters"
+    weight: 1.2
+  - name: "World Development"
+    weight: 1.1
+  - name: "Conflict Management and Peace Science"
+    weight: 1.2
+  - name: "ISPRS Journal of Photogrammetry and Remote Sensing"
+    weight: 1.3
+
+# ── Keywords ─────────────────────────────────────────────────
+# Papers matching these terms get pulled from Semantic Scholar.
+# To add: new line starting with "  - "
+# To remove: delete the line
+
+keywords:
+  - illegal mining remote sensing
+  - sovereignty disputes natural resources
+  - sediment transport satellite
+  - NDTI turbidity Sentinel-2
+  - physics-informed machine learning hydrology
+  - geopolitical impunity extraction
+  - governance deforestation conflict
+  - event study land use change
+  - difference-in-differences deforestation
+  - spatial panel econometrics environment
+  - game theory resource conflict
+  - artisanal mining water quality
+
+# ── Authors to Track ─────────────────────────────────────────
+# Any new paper by these authors will be included regardless of journal.
+# To add: new line. To remove: delete the line.
+
+authors_to_track:
+  - "Nils Petter Gleditsch"
+  - "Patrick Meyfroidt"
+  - "Bruce Bueno de Mesquita"
+
+# ── Delivery ─────────────────────────────────────────────────
+
+delivery:
+  email: "urialuzon@gmail.com"
+  min_relevance_score: 6    # 1-10 — only papers scoring at or above this are included
