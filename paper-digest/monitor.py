@@ -94,7 +94,7 @@ def fetch_papers_by_keywords(config):
     for keyword in config.get('keywords', []):
         params = {
             'search': keyword,
-            'filter': f'from_publication_date:{two_weeks_ago},has_abstract:true',
+            'filter': f'from_publication_date:{two_weeks_ago}',
             'per-page': 25,
             'select': 'id,title,abstract_inverted_index,authorships,primary_location,'
                       'publication_year,publication_date,cited_by_count,doi,landing_page_url',
@@ -138,7 +138,7 @@ def fetch_papers_by_authors(config):
         # Step 2: get their recent papers
         resp2 = openalex_get('works', {
             'filter': f'authorships.author.id:{author_id},'
-                      f'from_publication_date:{two_weeks_ago},has_abstract:true',
+                      f'from_publication_date:{two_weeks_ago}',
             'per-page': 10,
             'select': 'id,title,abstract_inverted_index,authorships,primary_location,'
                       'publication_year,publication_date,cited_by_count,doi,landing_page_url',
