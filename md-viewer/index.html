@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MD Viewer</title>
+  <style>
+    body { margin: 0; background: #f5f5f5; display: flex; flex-direction: column; align-items: center; padding: 2rem; min-height: 100vh; box-sizing: border-box; }
+    #editor { max-width: 860px; width: 100%; background: white; border-radius: 8px; padding: 2rem; box-shadow: 0 2px 12px rgba(0,0,0,.08); }
+    #toolbar { display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem; }
+    #open-btn { cursor: pointer; background: #4f80bd; color: white; font-family: sans-serif; font-size: 0.9rem; padding: 0.5rem 1.2rem; border-radius: 6px; user-select: none; }
+    #open-btn:hover { background: #3a6aaa; }
+    #hint { color: #aaa; font-family: sans-serif; font-size: 0.85rem; }
+    body.dragging::after {
+      content: 'שחרר קובץ MD';
+      position: fixed; inset: 0;
+      background: rgba(79,128,189,.15);
+      border: 3px dashed #4f80bd;
+      border-radius: 12px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 2rem; font-family: sans-serif; color: #4f80bd;
+      pointer-events: none;
+    }
+  </style>
+  </head>
+  <body>
+    <div id="toolbar">
+      <label id="open-btn">
+        פתח קובץ MD
+        <input type="file" accept=".md" id="file-input" style="display:none">
+      </label>
+      <span id="hint">או גרור קובץ לכל מקום בדף</span>
+    </div>
+    <div id="editor"></div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

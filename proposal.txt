@@ -1,0 +1,139 @@
+RESEARCH PROPOSAL
+Geopolitical Impunity and Extractive Activity:
+A Hybrid Physics–ML Framework for Detecting Mining Anomalies in Disputed Territories
+PhD Research Proposal  |  Data Science & Environmental Geopolitics
+
+Core Research Proposition
+Contested sovereignty creates enforcement vacuums that enable illegal extraction.
+We can detect and quantify this effect by combining a physical hydrological model
+with satellite observations — and using ML to learn what the physics alone cannot explain.
+The residual between physical prediction and observed reality is where geopolitics lives.
+
+Research Question
+Do territories with active sovereignty disputes exhibit systematic excess extractive activity — deforestation, mining, sediment pollution — beyond what natural hydrological and environmental conditions predict?
+
+The secondary question: Is the magnitude of that excess statistically predicted by geopolitical features — dispute status, governance quality, metal prices, proximity to borders?
+
+Model Architecture
+Step 1 — Physical Baseline Model
+A hydrological sediment transport model (SWAT or a simplified mass-balance routing model) predicts expected water turbidity and sediment load at downstream river monitoring points, given only natural inputs:
+•	Precipitation (ERA5 reanalysis, free, global, 1979–present)
+•	Digital elevation model — slope and catchment geometry (SRTM 30m, free)
+•	Soil type and erodibility (FAO HWSD, free)
+•	Baseline land cover in the absence of human disturbance (ESA CCI Land Cover)
+
+Output: predicted turbidity time series ŷ_physics at each catchment outlet.
+
+Step 2 — Satellite Observation
+Sentinel-2 multispectral imagery is used to compute observed turbidity via NDTI (Normalized Difference Turbidity Index) and suspended sediment proxies at the same downstream locations.
+
+Output: observed turbidity time series y_observed, 2017–present at 10m resolution.
+
+Step 3 — Residual Computation
+The residual is defined as:
+
+residual(t, location) = y_observed(t) − ŷ_physics(t)
+
+Positive residuals = more sediment/turbidity than natural conditions predict. This excess is the anomaly signal — the fingerprint of human activity the physics did not account for.
+
+Step 4 — ML Residual Predictor
+A gradient boosting model (XGBoost / LightGBM) or a spatiotemporal LSTM is trained to predict the residual using geopolitical and economic covariates:
+•	Dispute status of the catchment zone (binary + intensity score from ICOW)
+•	Governance quality index (World Bank WGI — Rule of Law, Control of Corruption)
+•	Distance to nearest international border
+•	Global metal price index (gold, copper, tin — World Bank Pink Sheet)
+•	Conflict event density in the zone (ACLED, lagged)
+•	Forest loss in upstream catchment (Hansen/GFW annual data)
+
+If dispute status is a significant positive predictor of the residual, we have quantitative evidence that geopolitical impunity drives excess extraction — beyond what commodity prices or governance alone explain.
+
+Step 5 — Causal Validation
+To move from correlation to causation, an event study design is applied around dispute escalation events (ICJ filings, militarized incidents from MID dataset). Does the residual spike following escalation? Does it persist? This tests the mechanism, not just the association.
+
+Data Requirements
+
+Dataset	Description	Access
+ERA5 Reanalysis	Global precipitation, temperature, wind — 0.25° resolution, 1979–present	Free (ECMWF CDS)
+SRTM DEM	Digital elevation model, 30m global resolution	Free (NASA EarthData)
+FAO HWSD	Global soil texture and erodibility parameters	Free (FAO)
+ESA CCI Land Cover	Annual global land cover maps, 300m, 1992–2020	Free (ESA)
+Sentinel-2 MSI	Multispectral imagery for turbidity indices, 10m, 2017–present	Free (GEE / Copernicus)
+Hansen/GFW	Annual tree cover loss at 30m, 2000–present	Free (GEE)
+VIIRS Nighttime Lights	Economic activity proxy, monthly composite	Free (NASA)
+ICOW Dataset	International sovereignty dispute records with escalation dates	Free (academic)
+MID Dataset	Militarized Interstate Disputes, event-level	Free (CoW Project)
+IBRU Border Database	Maritime and land boundary dispute boundaries	Free (Durham Univ.)
+ACLED	Geo-coded conflict and protest events, 1997–present	Free (registration)
+World Bank WGI	Governance indicators — rule of law, corruption control	Free
+World Bank Pink Sheet	Global commodity price series — metals	Free
+Global Fishing Watch	AIS vessel tracking, fishing effort by flag state	Free API
+
+Techniques & Tools
+Physical Modeling
+•	SWAT (Soil & Water Assessment Tool) — full hydrological model if calibration data allows
+•	Simplified mass-balance sediment routing as fallback for data-sparse regions
+•	Google Earth Engine (GEE) — satellite data processing at scale
+
+Remote Sensing & Feature Engineering
+•	NDTI / NDWI band ratio computation from Sentinel-2 for turbidity estimation
+•	Change detection on Hansen/GFW annual layers for deforestation signal
+•	Spatial joins: catchment delineation from DEM using pysheds or WhiteboxTools
+
+Machine Learning
+•	XGBoost / LightGBM for tabular residual prediction with SHAP interpretability
+•	Spatiotemporal LSTM or Transformer for sequence modeling of residual time series
+•	Propensity Score Matching for disputed vs. non-disputed zone comparison
+
+Causal Inference
+•	Event study / interrupted time series around dispute escalation dates
+•	Difference-in-differences with matched control catchments
+•	Spatial lag models to control for geographic autocorrelation (PySAL)
+
+Software Stack
+•	Python — primary: rasterio, geopandas, xarray, pysheds, scikit-learn, shap
+•	R — optional: plm (panel models), spdep (spatial econometrics)
+•	Google Earth Engine (JavaScript / Python API) — satellite data at scale
+•	QGIS — spatial validation and visual inspection
+
+Literature Search Keywords
+Use the following keyword clusters when searching Google Scholar, Web of Science, or Scopus:
+
+Core Concept Cluster
+illegal mining detection	satellite remote sensing	sovereignty disputes
+
+Physical Model Cluster
+SWAT sediment transport	water turbidity satellite	NDTI Sentinel-2
+
+Hybrid ML Cluster
+physics-guided machine learning	model residual correction	hybrid hydrological
+
+Geopolitics Cluster
+resource extraction conflict	weak governance deforestation	border zone environment
+
+Causal Methods Cluster
+event study land use change	difference-in-differences deforestation	spatial panel econometrics
+
+Suggested combined searches:
+•	"illegal mining" AND "remote sensing" AND "governance"
+•	"sediment transport model" AND "satellite validation" AND "land use"
+•	"physics-informed machine learning" AND "hydrology"
+•	"disputed territory" AND "natural resource extraction"
+•	"water turbidity" AND "Sentinel-2" AND "artisanal mining"
+
+Known Limitations to Address in the Literature Review
+•	SWAT calibration requires stream gauge data — sparse in contested zones. May need to fall back to uncalibrated or regionalized parameters. Assess the literature on ungauged basin estimation.
+•	Turbidity detects surface/alluvial mining only — underground hard-rock mines leave no water signal. Scope must be clearly bounded.
+•	Dispute databases (ICOW, MID) have variable temporal granularity. Check coverage before committing to the event study design.
+•	Confounding: disputed zones may differ geologically from non-disputed zones (more mineral-rich, hence disputed in the first place). This endogeneity must be addressed explicitly.
+
+Research Novelty
+The primary methodological contribution is the hybrid pipeline itself:
+physics model → residual → ML geopolitical predictor.
+
+Most remote sensing studies of illegal extraction use pure ML or pure change detection.
+Most geopolitical studies of resource extraction use aggregate country-level statistics.
+
+This proposal operates at catchment resolution, over time, with an interpretable
+physical baseline — and frames the residual as a geopolitically meaningful signal.
+That framing is, to the best of current knowledge, novel.
+
