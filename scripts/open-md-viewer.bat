@@ -1,3 +1,3 @@
 @echo off
-cd /d "%~dp0md-viewer"
+cd /d "%~dp0..\md-viewer"
 npm run dev
